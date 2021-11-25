@@ -12,6 +12,8 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 )
 
+var imports = map[string]string{}
+
 var config = &Config{
 	RequiredAlias: make(map[string]string),
 }
@@ -66,7 +68,26 @@ func visitImportSpecNode(config *Config, node *ast.ImportSpec, pass *analysis.Pa
 		pass.Reportf(node.Pos(), "import not quoted")
 	}
 
-	if required, exists := config.AliasFor(path); exists && required != alias {
+	if alias != "" {
+		val, ok := imports[path]
+		if ok {
+			if val != alias {
+				message := fmt.Sprintf("package %q have different alias, %q, %q", path, alias, val)
+
+				pass.Report(analysis.Diagnostic{
+					Pos:     node.Pos(),
+					End:     node.End(),
+					Message: message,
+					SuggestedFixes: []analysis.SuggestedFix{{
+						Message:   "Use same alias or do not use alias",
+						TextEdits: findEdits(node, pass.TypesInfo.Uses, path, alias, val),
+					}},
+				})
+			}
+		} else {
+			imports[path] = alias
+		}
+	} else if required, exists := config.AliasFor(path); exists && required != alias {
 		message := fmt.Sprintf("import %q imported as %q but must be %q according to config", path, alias, required)
 		if alias == "" {
 			message = fmt.Sprintf("import %q imported without alias but must be with alias %q according to config", path, required)
